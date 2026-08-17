@@ -1,0 +1,39 @@
+{
+  "_crimson-pro-400-normal-B4SlG4wx.woff2": {
+    "file": "assets/crimson-pro-400-normal-B4SlG4wx.woff2",
+    "src": "_crimson-pro-400-normal-B4SlG4wx.woff2"
+  },
+  "_crimson-pro-400-normal-BzhyrSeK.woff": {
+    "file": "assets/crimson-pro-400-normal-BzhyrSeK.woff",
+    "src": "_crimson-pro-400-normal-BzhyrSeK.woff"
+  },
+  "_crimson-pro-500-normal-BCdZ5465.woff": {
+    "file": "assets/crimson-pro-500-normal-BCdZ5465.woff",
+    "src": "_crimson-pro-500-normal-BCdZ5465.woff"
+  },
+  "_crimson-pro-500-normal-D6GH0edE.woff2": {
+    "file": "assets/crimson-pro-500-normal-D6GH0edE.woff2",
+    "src": "_crimson-pro-500-normal-D6GH0edE.woff2"
+  },
+  "_crimson-pro-600-normal-Ca4fy0Cf.woff": {
+    "file": "assets/crimson-pro-600-normal-Ca4fy0Cf.woff",
+    "src": "_crimson-pro-600-normal-Ca4fy0Cf.woff"
+  },
+  "_crimson-pro-600-normal-vJ8oEdKU.woff2": {
+    "file": "assets/crimson-pro-600-normal-vJ8oEdKU.woff2",
+    "src": "_crimson-pro-600-normal-vJ8oEdKU.woff2"
+  },
+  "_fonts-scZngnlz.css": {
+    "file": "assets/fonts-scZngnlz.css",
+    "src": "_fonts-scZngnlz.css"
+  },
+  "resources/js/app.js": {
+    "file": "assets/app-BsFKFq3y.js",
+    "name": "app",
+    "src": "resources/js/app.js",
+    "isEntry": true,
+    "css": [
+      "assets/app-C__nm-6B.css"
+    ]
+  }
+}
