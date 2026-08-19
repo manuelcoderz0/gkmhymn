@@ -4,7 +4,7 @@
             <div class="relative pb-5 flex items-center justify-between z-1">
                 <div class="flex items-center gap-2">
                     <a href="{{ route('home') }}" wire:navigate class="flex items-center gap-2 cursor-pointer">
-                        <div class="size-9 relative flex items-center justify-center border border-[#e9e9e9] dark:border-white/30 rounded-md bg-white/10">
+                        <div class="size-9 relative flex items-center justify-center border border-[#e9e9e9] dark:border-white/30 rounded-md bg-white/10 dark:bg-white/5">
                             <svg class="size-5.5 stroke-[#1f1f1f] dark:stroke-white" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="icon icon-tabler icons-tabler-outline icon-tabler-chevron-left">
                                 <path stroke="none" d="M0 0h24v24H0z" fill="none" />
                                 <path d="M15 6l-6 6l6 6" />
@@ -18,7 +18,7 @@
 
                 <div class="flex items-center gap-2">
                     <button class="flex items-center gap-2 cursor-pointer">
-                        <label wire:ignore class="swap swap-rotate size-9 relative place-items-center border border-[#e9e9e9] dark:border-white/30 rounded-md bg-white/10">
+                        <label wire:ignore class="swap swap-rotate size-9 relative place-items-center border border-[#e9e9e9] dark:border-white/30 rounded-md bg-white/10 dark:bg-white/5">
                             <!-- this hidden checkbox controls the state -->
                             <input type="checkbox" x-on:change="@this.$js.theme" class="theme-controller" />
 
@@ -49,7 +49,9 @@
         <div class="px-4.5">
             <form wire:submit="save" class="bg-white dark:bg-[#343434] text-[#1f1f1f]/90 dark:text-white p-4 rounded-md text-center flex flex-col gap-4">
                 <fieldset class="fieldset">
-                    <legend class="fieldset-legend">Font Size</legend>
+                    <legend class="fieldset-legend">
+                        Font Size: <span style="font-size: {{ setting('font') }}px">{{ setting('font') }}</span>
+                    </legend>
                     <div class="w-full">
                         <input wire:model.live="form.font" wire:change="save" type="range" min="14" max="18" class="range range-xs w-full" step="1" />
                         <div class="flex justify-between px-2.5 mt-2 text-xs">

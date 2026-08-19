@@ -4,7 +4,7 @@
             <div class="relative pb-5 flex items-center justify-between z-1">
                 <div class="flex items-center gap-2">
                     <a href="{{ route('home') }}" wire:navigate class="flex items-center gap-2 cursor-pointer">
-                        <div class="size-9 relative flex items-center justify-center border border-[#e9e9e9] dark:border-white/30 rounded-md bg-white/10">
+                        <div class="size-9 relative flex items-center justify-center border border-[#e9e9e9] dark:border-white/30 rounded-md bg-white/10 dark:bg-white/5">
                             <svg class="size-5.5 stroke-[#1f1f1f] dark:stroke-white" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="icon icon-tabler icons-tabler-outline icon-tabler-chevron-left">
                                 <path stroke="none" d="M0 0h24v24H0z" fill="none" />
                                 <path d="M15 6l-6 6l6 6" />
@@ -17,32 +17,19 @@
                 </div>
 
                 <div class="flex items-center gap-2">
-                    <button class="flex items-center gap-2 cursor-pointer">
-                        <label wire:ignore class="swap swap-rotate size-9 relative place-items-center border border-[#e9e9e9] dark:border-white/30 rounded-md bg-white/10">
-                            <!-- this hidden checkbox controls the state -->
-                            <input type="checkbox" x-on:change="@this.$js.theme" class="theme-controller" />
-              
-                            <!-- sun icon -->
-                            <svg class="swap-{{ setting('theme') == 'dark' ? 'off' : 'on' }} size-5.5 fill-none stroke-[#1f1f1f] dark:stroke-white" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                    <button wire:click="favorite" class="flex items-center gap-2 cursor-pointer">
+                        <div class="size-9 relative flex items-center justify-center border border-[#e9e9e9] dark:border-white/30 rounded-md bg-white/10 dark:bg-white/5">
+                            <svg class="size-5.5 stroke-[#1f1f1f] dark:stroke-white {{ $hymn->fav ? 'fill-none' : 'fill-[#ffb400] stroke-[#ffb400]!' }}" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
                                 <path stroke="none" d="M0 0h24v24H0z" fill="none" />
-                                <path d="M8 12a4 4 0 1 0 8 0a4 4 0 1 0 -8 0" />
-                                <path d="M3 12h1m8 -9v1m8 8h1m-9 8v1m-6.4 -15.4l.7 .7m12.1 -.7l-.7 .7m0 11.4l.7 .7m-12.1 -.7l-.7 .7" />
+                                <path d="M12 17.75l-6.172 3.245l1.179 -6.873l-5 -4.867l6.9 -1l3.086 -6.253l3.086 6.253l6.9 1l-5 4.867l1.179 6.873l-6.158 -3.245" />
                             </svg>
-
-                            <!-- moon icon -->
-                            <svg class="swap-{{ setting('theme') == 'light' ? 'off' : 'on' }} size-5.5 fill-none stroke-[#1f1f1f] dark:stroke-white" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="icon icon-tabler icons-tabler-outline icon-tabler-moon">
-                                <path stroke="none" d="M0 0h24v24H0z" fill="none" />
-                                <path d="M12 3c.132 0 .263 0 .393 0a7.5 7.5 0 0 0 7.92 12.446a9 9 0 1 1 -8.313 -12.454l0 .008" />
-                            </svg>
-                        </label>
+                        </div>
                     </button>
-                    <button class="flex items-center gap-2 cursor-pointer">
-                        <div class="size-9 relative flex items-center justify-center border border-[#e9e9e9] dark:border-white/30 rounded-md bg-white/10">
-                            <svg class="size-5.5 stroke-[#1f1f1f] dark:stroke-white" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="icon icon-tabler icons-tabler-outline icon-tabler-menu-2">
+                    <button wire:click="bookmark" class="flex items-center gap-2 cursor-pointer">
+                        <div class="size-9 relative flex items-center justify-center border border-[#e9e9e9] dark:border-white/30 rounded-md bg-white/10 dark:bg-white/5">
+                            <svg class="size-5.5 stroke-[#1f1f1f] dark:stroke-white {{ $hymn->sav ? 'fill-none' : 'fill-[#ffb400] stroke-[#ffb400]!' }}" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="icon icon-tabler icons-tabler-outline icon-tabler-bookmark">
                                 <path stroke="none" d="M0 0h24v24H0z" fill="none" />
-                                <path d="M4 6l16 0" />
-                                <path d="M4 12l16 0" />
-                                <path d="M4 18l16 0" />
+                                <path d="M18 7v14l-6 -4l-6 4v-14a4 4 0 0 1 4 -4h4a4 4 0 0 1 4 4" />
                             </svg>
                         </div>
                     </button>
@@ -54,7 +41,7 @@
 
     <section class="py-6">
         <div class="px-4.5">
-            <div class="bg-white dark:bg-[#343434] text-[#1f1f1f]/90 dark:text-white p-4 rounded-md text-center">
+            <div style="font-size: {{ setting('font') }}px" class="bg-white dark:bg-[#343434] text-[#1f1f1f]/90 dark:text-white p-4 rounded-md text-center">
                 {!! $hymn->details !!}
             </div>
         </div>
