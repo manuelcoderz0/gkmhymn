@@ -7,21 +7,7 @@ use JsonSerializable;
 
 class PluginManifest implements JsonSerializable
 {
-    /**
-     * Every platform a plugin may declare support for.
-     */
-    public const PLATFORMS = ['android', 'ios'];
-
     public readonly string $namespace;
-
-    /**
-     * Platforms this plugin ships native code for, from the manifest's
-     * `platforms` key. Absent means both, so a manifest written before this
-     * key was read keeps working.
-     *
-     * @var list<string>
-     */
-    public readonly array $platforms;
 
     public readonly array $bridgeFunctions;
 
@@ -37,8 +23,6 @@ class PluginManifest implements JsonSerializable
 
     public readonly array $secrets;
 
-    public readonly array $components;
-
     public function __construct(array $data)
     {
         $this->validate($data);
@@ -47,64 +31,13 @@ class PluginManifest implements JsonSerializable
         $data = $this->normalizeToNewFormat($data);
 
         $this->namespace = $data['namespace'];
-        $this->platforms = $this->normalizePlatforms($data['platforms'] ?? null);
         $this->bridgeFunctions = $data['bridge_functions'] ?? [];
-        $this->components = $data['components'] ?? [];
         $this->android = $data['android'] ?? [];
         $this->ios = $data['ios'] ?? [];
         $this->assets = $data['assets'] ?? [];
         $this->events = $data['events'] ?? [];
         $this->hooks = $data['hooks'] ?? [];
         $this->secrets = $data['secrets'] ?? [];
-    }
-
-    /**
-     * Read the manifest's `platforms` key.
-     *
-     * Absent, null or empty means both platforms: the key has been emitted by
-     * `native:plugin:create` for a long time without being read, so treating
-     * "not stated" as "android only" would break existing plugins.
-     *
-     * A typo is rejected rather than ignored. Silently dropping `"IOS"` would
-     * turn a spelling mistake into "this plugin has no iOS code", which is
-     * exactly the failure this key exists to prevent.
-     *
-     * @return list<string>
-     */
-    protected function normalizePlatforms(mixed $platforms): array
-    {
-        if ($platforms === null || $platforms === []) {
-            return static::PLATFORMS;
-        }
-
-        if (! is_array($platforms)) {
-            throw new InvalidArgumentException(
-                'Plugin manifest field `platforms` must be an array of '.implode(', ', static::PLATFORMS)
-            );
-        }
-
-        $normalized = [];
-
-        foreach ($platforms as $platform) {
-            if (! is_string($platform)) {
-                throw new InvalidArgumentException(
-                    'Plugin manifest field `platforms` must contain strings'
-                );
-            }
-
-            $platform = strtolower(trim($platform));
-
-            if (! in_array($platform, static::PLATFORMS, true)) {
-                throw new InvalidArgumentException(
-                    "Plugin manifest declares unknown platform: {$platform}. ".
-                    'Allowed: '.implode(', ', static::PLATFORMS)
-                );
-            }
-
-            $normalized[$platform] = true;
-        }
-
-        return array_keys($normalized);
     }
 
     /**
@@ -191,7 +124,6 @@ class PluginManifest implements JsonSerializable
             isset($data['android']['services']) ||
             isset($data['android']['receivers']) ||
             isset($data['android']['providers']) ||
-            isset($data['android']['gradle_plugins']) ||
             isset($data['android']['min_version'])
         );
 
@@ -245,34 +177,6 @@ class PluginManifest implements JsonSerializable
                 );
             }
         }
-
-        // Validate components structure (for UI plugins)
-        foreach ($data['components'] ?? [] as $index => $component) {
-            if (empty($component['type'])) {
-                throw new InvalidArgumentException(
-                    "Component at index {$index} missing 'type'"
-                );
-            }
-
-            if (empty($component['element'])) {
-                throw new InvalidArgumentException(
-                    "Component '{$component['type']}' missing 'element' class"
-                );
-            }
-
-            if (empty($component['blade'])) {
-                throw new InvalidArgumentException(
-                    "Component '{$component['type']}' missing 'blade' class"
-                );
-            }
-
-            // At least one platform renderer required
-            if (empty($component['android_renderer']) && empty($component['ios_renderer'])) {
-                throw new InvalidArgumentException(
-                    "Component '{$component['type']}' missing platform renderer (android_renderer or ios_renderer)"
-                );
-            }
-        }
     }
 
     public static function fromFile(string $path): static
@@ -299,9 +203,7 @@ class PluginManifest implements JsonSerializable
     {
         return [
             'namespace' => $this->namespace,
-            'platforms' => $this->platforms,
             'bridge_functions' => $this->bridgeFunctions,
-            'components' => $this->components,
             'android' => $this->android,
             'ios' => $this->ios,
             'assets' => $this->assets,

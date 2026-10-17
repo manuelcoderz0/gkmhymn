@@ -11,7 +11,8 @@ class HymnSeeder extends Seeder {
      * Run the database seeds.
      */
     public function run(): void {
-        $hymns  = json_decode(file_get_contents(resource_path('hymns.json')), true);
+        //$hymns  = json_decode(file_get_contents(resource_path('hymns.json')), true);
+        $hymns  = json_decode(file_get_contents(database_path('seeders/hymns.json')), true);
 
         foreach ($hymns as $item) {
             $hymn = new Hymn();

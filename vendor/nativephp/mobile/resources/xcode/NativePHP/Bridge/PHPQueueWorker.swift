@@ -26,15 +26,6 @@ final class PHPQueueWorker {
 
     private var workerThread: Thread?
     private var running = false
-    private var stopped: DispatchSemaphore?
-
-    /// Signalled by `stopAndWait()` so the idle wait between job passes ends
-    /// immediately. Without it the loop only re-checks `running` after the
-    /// full interval elapses, so every stop request — and therefore every hot
-    /// reload, which stops the worker before rebooting the runtime — waits out
-    /// up to `sleepIdleMs`. That was the dominant and most variable part of a
-    /// reload: ~4.6s measured, versus ~1.0s once the wait is interruptible.
-    private var wake = DispatchSemaphore(value: 0)
 
     private init() {}
 
@@ -48,8 +39,6 @@ final class PHPQueueWorker {
         }
 
         running = true
-        stopped = DispatchSemaphore(value: 0)
-        wake = DispatchSemaphore(value: 0)
 
         let thread = Thread {
             self.workerLoop()
@@ -62,7 +51,7 @@ final class PHPQueueWorker {
         NSLog("PHPQueueWorker: thread launched")
     }
 
-    /// Stop the worker thread (non-blocking — thread exits on next loop iteration).
+    /// Stop the worker thread and shut down the worker runtime.
     func stop() {
         guard running else { return }
 
@@ -70,22 +59,6 @@ final class PHPQueueWorker {
         running = false
         // Thread will exit on next loop iteration
         workerThread = nil
-    }
-
-    /// Stop the worker thread and block until it has fully exited and called
-    /// _worker_php_shutdown(). This MUST be called before php_embed_shutdown()
-    /// (i.e. PersistentPHPRuntime.reboot()) — the global shutdown destroys
-    /// shared Zend module state that would corrupt the worker's live TSRM context.
-    func stopAndWait() {
-        guard running else { return }
-
-        NSLog("PHPQueueWorker: stopAndWait — waiting for worker to exit")
-        running = false
-        wake.signal()
-        stopped?.wait()
-        stopped = nil
-        workerThread = nil
-        NSLog("PHPQueueWorker: stopAndWait — worker exited")
     }
 
     var isRunning: Bool { running }
@@ -126,13 +99,10 @@ final class PHPQueueWorker {
                 sleepMs = sleepIdleMs
             }
 
-            // Interruptible idle wait — returns as soon as `stopAndWait()`
-            // signals, rather than sleeping the full interval first.
-            _ = wake.wait(timeout: .now() + Double(sleepMs) / 1000.0)
+            Thread.sleep(forTimeInterval: Double(sleepMs) / 1000.0)
         }
 
         _worker_php_shutdown()
-        stopped?.signal()
         NSLog("PHPQueueWorker: stopped")
     }
 

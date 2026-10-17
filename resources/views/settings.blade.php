@@ -45,7 +45,7 @@
 
 
 
-    <section class="py-6">
+    <section  x-data x-transition:enter="transition-transform duration-100" x-transition:enter-start="translate-x-full" x-transition:enter-end="translate-x-0" class="py-6 slide-in">
         <div class="px-4.5">
             <form wire:submit="save" class="bg-white dark:bg-[#343434] text-[#1f1f1f]/90 dark:text-white p-4 rounded-md text-center flex flex-col gap-4">
                 <fieldset class="fieldset">

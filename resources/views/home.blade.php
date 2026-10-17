@@ -84,7 +84,7 @@
             <button class="{{ $filter === 'sav' ? 'bg-[#065c2d] text-white' : 'bg-white dark:bg-[#343434] text-[#8f8f8f] dark:text-white/50' }} px-3 py-2.5 rounded-lg shrink-0" wire:click="set_filter('sav')">Bookmark</button>
             <button class="{{ $filter === 'spe' ? 'bg-[#065c2d] text-white' : 'bg-white dark:bg-[#343434] text-[#8f8f8f] dark:text-white/50' }} px-3 py-2.5 rounded-lg shrink-0" wire:click="set_filter('spe')">Special</button>
         </div>
-        <div class="px-4.5">
+        <div wire:transition="page-content" x-data x-transition:enter="transition-transform duration-100" x-transition:enter-start="translate-x-full" x-transition:enter-end="translate-x-0" class="px-4.5 slide-in">
             <div class="mt-6 bg-white dark:bg-[#343434] rounded-lg py-7 px-3.5 flex flex-col gap-4">
                 @forelse($hymns as $hymn)
                     <a href="{{ route('hymn', ['hymn' => $hymn->id]) }}" wire:navigate class="flex w-full min-w-0 px-4 py-3 bg-[#f5f5f5] dark:bg-[#1f1f1f] rounded-md">

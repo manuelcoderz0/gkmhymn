@@ -8,7 +8,6 @@ use Native\Mobile\Exceptions\PluginConflictException;
 use Native\Mobile\Plugins\Plugin;
 use Native\Mobile\Plugins\PluginHookRunner;
 use Native\Mobile\Plugins\PluginRegistry;
-use Native\Mobile\Plugins\SwiftSourceFilter;
 use Native\Mobile\Support\Stub;
 
 class IOSPluginCompiler
@@ -94,23 +93,11 @@ class IOSPluginCompiler
             throw new PluginConflictException($conflicts);
         }
 
-        // A plugin that declares `platforms: ["android"]` contributes nothing
-        // to an iOS build: no sources, no registrations, no Info.plist keys.
-        // Hooks still run for every plugin — a hook is the plugin's own code
-        // and gets to decide for itself.
-        $allPlugins = $this->registry->all()->filter(fn (Plugin $p) => $p->supportsPlatform('ios'));
+        $allPlugins = $this->registry->all();
         $hookRunner = $this->getHookRunner();
 
         // Run pre-compile hooks
         $hookRunner->runPreCompileHooks();
-
-        // The generated plugin tree is fully derived from the installed
-        // plugins, so start from a clean slate. Copying over the previous
-        // output would leave stale files behind when a plugin deletes or
-        // renames a source file (or is removed entirely), producing
-        // duplicate-symbol build failures in Xcode.
-        $this->clean();
-        $this->files->ensureDirectoryExists($this->generatedPath);
 
         // Get plugins with iOS code (for copying files)
         $pluginsWithCode = $allPlugins->filter(fn (Plugin $p) => $p->hasIosCode());
@@ -132,44 +119,31 @@ class IOSPluginCompiler
             return ! empty($p->getIosInfoPlist()) || ! empty($p->getIosDependencies());
         });
 
-        // Check for plugins with iOS UI component renderers
-        $pluginsWithRenderers = $allPlugins->filter(function (Plugin $p) {
-            foreach ($p->getComponents() as $component) {
-                if (! empty($component['ios_renderer'])) {
-                    return true;
-                }
-            }
-
-            return false;
-        });
-
         // The app may declare per-locale permission strings without depending on
         // any plugin shipping iOS data — keep going past the early return below
         // so writeInfoPlistLocalizations() can run on app config alone.
         $hasAppLocalizations = ! empty($this->getAppInfoPlistLocalizations());
 
-        // If no plugins have any iOS-related data, generate empty registrations
+        // If no plugins have any iOS-related data, generate empty registration
         if (
             $pluginsWithCode->isEmpty()
             && $pluginsWithFunctions->isEmpty()
             && $pluginsWithIosData->isEmpty()
-            && $pluginsWithRenderers->isEmpty()
             && ! $hasAppLocalizations
         ) {
             $this->generateEmptyRegistration();
-            $this->generateEmptyRendererRegistration();
 
             return;
         }
 
+        // Ensure generated directory exists
+        $this->files->ensureDirectoryExists($this->generatedPath);
+
         // Copy plugin source files
         $pluginsWithCode->each(fn (Plugin $plugin) => $this->copyPluginSources($plugin));
 
-        // Generate the registration file (filters for iOS functions internally)
+        // Generate the registration file (uses all plugins, filters for iOS functions internally)
         $this->generateBridgeFunctionRegistration($allPlugins);
-
-        // Generate UI plugin renderer registration
-        $this->generateRendererRegistration($allPlugins);
 
         // Merge Info.plist entries (for any plugins with iOS permissions)
         $this->mergeInfoPlistEntries($allPlugins);
@@ -217,72 +191,40 @@ class IOSPluginCompiler
         $pluginDir = $this->generatedPath.'/'.$plugin->getNamespace();
         $this->files->ensureDirectoryExists($pluginDir);
 
-        $explicit = $plugin->getIosSources();
-
-        if ($explicit !== []) {
-            $this->copyDeclaredSwiftSources($plugin, $sourcePath, $pluginDir, $explicit);
-
-            return;
-        }
-
+        // Copy all Swift files recursively
         $this->copySwiftFilesRecursively($sourcePath, $pluginDir);
     }
 
     /**
-     * Copy only the paths a plugin names in `ios.sources`.
-     *
-     * A named file is copied as-is; a named directory is walked with the same
-     * exclusions as the automatic path, so an explicit list still cannot drag
-     * a test target into the app.
-     *
-     * @param  list<string>  $sources
-     */
-    protected function copyDeclaredSwiftSources(Plugin $plugin, string $source, string $destination, array $sources): void
-    {
-        foreach ($sources as $relative) {
-            $relative = trim($relative, '/');
-            $path = $source.'/'.$relative;
-
-            if ($this->files->isDirectory($path)) {
-                $this->copySwiftFilesRecursively($path, $destination.'/'.$relative);
-
-                continue;
-            }
-
-            if (! $this->files->isFile($path)) {
-                $this->warn("Plugin '{$plugin->name}': ios.sources names a path that does not exist: {$relative}");
-
-                continue;
-            }
-
-            $this->files->ensureDirectoryExists(dirname($destination.'/'.$relative));
-            $this->files->copy($path, $destination.'/'.$relative);
-        }
-    }
-
-    /**
-     * Recursively copy Swift files, preserving directory structure.
-     *
-     * SwiftPM manifests, test targets and build residue are skipped —
-     * see SwiftSourceFilter for why each one cannot compile in an app target.
+     * Recursively copy Swift files, preserving directory structure
      */
     protected function copySwiftFilesRecursively(string $source, string $destination): void
     {
-        foreach (SwiftSourceFilter::collect($source) as $relativePath) {
+        // First, copy any Swift files at the root level
+        $rootFiles = glob($source.'/*.swift') ?: [];
+        foreach ($rootFiles as $file) {
+            $filename = basename($file);
+            $this->files->copy($file, $destination.'/'.$filename);
+        }
+
+        // Then recursively handle subdirectories
+        $iterator = new \RecursiveIteratorIterator(
+            new \RecursiveDirectoryIterator($source, \RecursiveDirectoryIterator::SKIP_DOTS),
+            \RecursiveIteratorIterator::SELF_FIRST
+        );
+
+        foreach ($iterator as $item) {
+            $relativePath = substr($item->getPathname(), strlen($source) + 1);
             $destPath = $destination.'/'.$relativePath;
 
-            $this->files->ensureDirectoryExists(dirname($destPath));
-            $this->files->copy($source.'/'.$relativePath, $destPath);
-        }
-    }
-
-    /**
-     * Surface a build-time warning, when there is an output to surface it on.
-     */
-    protected function warn(string $message): void
-    {
-        if ($this->output !== null && method_exists($this->output, 'warn')) {
-            $this->output->warn($message);
+            if ($item->isDir()) {
+                $this->files->ensureDirectoryExists($destPath);
+            } elseif ($item->isFile() && $item->getExtension() === 'swift') {
+                // Skip root files (already copied above)
+                if (dirname($item->getPathname()) !== $source) {
+                    $this->files->copy($item->getPathname(), $destPath);
+                }
+            }
         }
     }
 
@@ -357,59 +299,6 @@ class IOSPluginCompiler
         $content = Stub::make('ios/PluginBridgeFunctionRegistration.empty.swift.stub')->render();
 
         $this->files->put($this->generatedPath.'/PluginBridgeFunctionRegistration.swift', $content);
-    }
-
-    /**
-     * Generate PluginRendererRegistration.swift for UI plugin renderers
-     */
-    protected function generateRendererRegistration(Collection $plugins): void
-    {
-        $registrations = [];
-
-        foreach ($plugins as $plugin) {
-            foreach ($plugin->getComponents() as $component) {
-                if (empty($component['ios_renderer'])) {
-                    continue;
-                }
-
-                $registrations[] = [
-                    'type' => $component['type'],
-                    'renderer' => $component['ios_renderer'],
-                    'plugin' => $plugin->name,
-                ];
-            }
-        }
-
-        if (empty($registrations)) {
-            $this->generateEmptyRendererRegistration();
-
-            return;
-        }
-
-        $registerCalls = collect($registrations)
-            ->map(function ($reg) {
-                return "    // Plugin: {$reg['plugin']}\n    SwiftUIRendererRegistry.shared.register(\"{$reg['type']}\") { AnyView({$reg['renderer']}(node: \$0)) }";
-            })
-            ->implode("\n\n");
-
-        $content = Stub::make('ios/PluginRendererRegistration.swift.stub')
-            ->replace('REGISTRATIONS', $registerCalls)
-            ->render();
-
-        $path = $this->generatedPath.'/PluginRendererRegistration.swift';
-        $this->files->put($path, $content);
-    }
-
-    /**
-     * Generate empty renderer registration when no UI plugins
-     */
-    protected function generateEmptyRendererRegistration(): void
-    {
-        $this->files->ensureDirectoryExists($this->generatedPath);
-
-        $content = Stub::make('ios/PluginRendererRegistration.empty.swift.stub')->render();
-
-        $this->files->put($this->generatedPath.'/PluginRendererRegistration.swift', $content);
     }
 
     /**

@@ -1,9 +1,9 @@
 <?php return array(
     'root' => array(
         'name' => 'laravel/laravel',
-        'pretty_version' => '1.0.0+no-version-set',
-        'version' => '1.0.0.0',
-        'reference' => null,
+        'pretty_version' => 'dev-main',
+        'version' => 'dev-main',
+        'reference' => '245ecef65fcb895087ae8b6f161f717e9132a9f3',
         'type' => 'project',
         'install_path' => __DIR__ . '/../../',
         'aliases' => array(),
@@ -449,9 +449,9 @@
             'dev_requirement' => false,
         ),
         'laravel/laravel' => array(
-            'pretty_version' => '1.0.0+no-version-set',
-            'version' => '1.0.0.0',
-            'reference' => null,
+            'pretty_version' => 'dev-main',
+            'version' => 'dev-main',
+            'reference' => '245ecef65fcb895087ae8b6f161f717e9132a9f3',
             'type' => 'project',
             'install_path' => __DIR__ . '/../../',
             'aliases' => array(),
@@ -617,9 +617,9 @@
             'dev_requirement' => true,
         ),
         'nativephp/mobile' => array(
-            'pretty_version' => '4.1.0',
-            'version' => '4.1.0.0',
-            'reference' => '7b3882647020c565cf5590e1662586e3472b1ebe',
+            'pretty_version' => '3.3.7',
+            'version' => '3.3.7.0',
+            'reference' => 'e8ea89813206002ea6acab6d6dca3c38b473bf0b',
             'type' => 'library',
             'install_path' => __DIR__ . '/../nativephp/mobile',
             'aliases' => array(),

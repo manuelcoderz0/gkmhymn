@@ -3173,17 +3173,17 @@
         },
         {
             "name": "nativephp/mobile",
-            "version": "4.1.0",
-            "version_normalized": "4.1.0.0",
+            "version": "3.3.7",
+            "version_normalized": "3.3.7.0",
             "source": {
                 "type": "git",
                 "url": "https://github.com/NativePHP/mobile-air.git",
-                "reference": "7b3882647020c565cf5590e1662586e3472b1ebe"
+                "reference": "e8ea89813206002ea6acab6d6dca3c38b473bf0b"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/NativePHP/mobile-air/zipball/7b3882647020c565cf5590e1662586e3472b1ebe",
-                "reference": "7b3882647020c565cf5590e1662586e3472b1ebe",
+                "url": "https://api.github.com/repos/NativePHP/mobile-air/zipball/e8ea89813206002ea6acab6d6dca3c38b473bf0b",
+                "reference": "e8ea89813206002ea6acab6d6dca3c38b473bf0b",
                 "shasum": ""
             },
             "require": {
@@ -3194,16 +3194,10 @@
                 "illuminate/contracts": "^10.0|^11.0|^12.0|^13.0",
                 "illuminate/support": "^10.0|^11.0|^12.0|^13.0",
                 "laravel/prompts": "^0.1.1|^0.2|^0.3",
-                "php": "^8.4",
+                "php": "^8.3",
                 "react/datagram": "^1.10",
                 "spatie/laravel-package-tools": "^1.14.0",
                 "workerman/workerman": "^4.1"
-            },
-            "conflict": {
-                "nativephp/mobile-device": "*",
-                "nativephp/mobile-dialog": "*",
-                "nativephp/mobile-file": "*",
-                "nativephp/mobile-system": "*"
             },
             "require-dev": {
                 "larastan/larastan": "^2.0",
@@ -3218,10 +3212,7 @@
                 "phpstan/phpstan-phpunit": "^1.0",
                 "spatie/laravel-ray": "^1.26"
             },
-            "suggest": {
-                "ext-zip": "Required by native:install to validate and extract the downloaded Android PHP binary archives"
-            },
-            "time": "2026-08-07T12:55:28+00:00",
+            "time": "2026-08-04T05:56:50+00:00",
             "type": "library",
             "extra": {
                 "laravel": {
@@ -3232,9 +3223,6 @@
             },
             "installation-source": "dist",
             "autoload": {
-                "files": [
-                    "src/helpers.php"
-                ],
                 "psr-4": {
                     "Native\\Mobile\\": "src/"
                 }
@@ -3265,7 +3253,7 @@
             ],
             "support": {
                 "issues": "https://github.com/NativePHP/mobile-air/issues",
-                "source": "https://github.com/NativePHP/mobile-air/tree/4.1.0"
+                "source": "https://github.com/NativePHP/mobile-air/tree/3.3.7"
             },
             "install-path": "../nativephp/mobile"
         },

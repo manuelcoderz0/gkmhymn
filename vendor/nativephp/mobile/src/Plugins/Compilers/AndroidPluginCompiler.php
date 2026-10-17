@@ -14,26 +14,7 @@ class AndroidPluginCompiler
 {
     protected string $androidProjectPath;
 
-    /**
-     * Root of all compiler output — a dedicated Gradle source root the
-     * compiler owns outright and deletes at the start of every compile.
-     * Registered in app/build.gradle.kts (shipped in the template;
-     * injected into older scaffolds by registerPluginSourceRoot()).
-     */
     protected string $generatedPath;
-
-    /**
-     * Where the registration files go inside the generated root. The path
-     * mirrors their Kotlin package so IDE inspections stay quiet.
-     */
-    protected string $registrationPath;
-
-    /**
-     * Where compiler output lived before the dedicated source root:
-     * registrations and no-package fallback copies under src/main/java.
-     * Removed on every compile.
-     */
-    protected string $legacyGeneratedPath;
 
     protected array $generatedFiles = [];
 
@@ -55,12 +36,8 @@ class AndroidPluginCompiler
         // Detect current app ID from build.gradle.kts (after prepareAndroidBuild has updated it)
         $this->appId = $this->detectCurrentAppId() ?? 'com.nativephp.mobile';
 
-        $this->generatedPath = $this->androidProjectPath.'/app/src/nativephp/kotlin';
-
         // Plugin registration always goes in the core NativePHP package
-        $this->registrationPath = $this->generatedPath.'/com/nativephp/mobile/bridge/plugins';
-
-        $this->legacyGeneratedPath = $this->androidProjectPath.'/app/src/main/java/com/nativephp/mobile/bridge/plugins';
+        $this->generatedPath = $this->androidProjectPath.'/app/src/main/java/com/nativephp/mobile/bridge/plugins';
     }
 
     /**
@@ -89,8 +66,8 @@ class AndroidPluginCompiler
     public function setAppId(string $appId): self
     {
         $this->appId = $appId;
-        // Note: registrations stay in the com.nativephp.mobile.bridge.plugins
-        // package regardless of app ID — it's part of the core NativePHP package
+        // Note: generatedPath stays at com/nativephp/mobile/bridge/plugins/
+        // Plugin registration is always in the core NativePHP package
 
         return $this;
     }
@@ -157,39 +134,14 @@ class AndroidPluginCompiler
             throw new PluginConflictException($conflicts);
         }
 
-        // A plugin that declares `platforms: ["ios"]` contributes nothing to an
-        // Android build. Hooks still run for every plugin — a hook is the
-        // plugin's own code and gets to decide for itself.
-        $allPlugins = $this->registry->all()->filter(fn (Plugin $p) => $p->supportsPlatform('android'));
+        $allPlugins = $this->registry->all();
         $hookRunner = $this->getHookRunner();
 
         // Run pre-compile hooks
         $hookRunner->runPreCompileHooks();
 
-        // The generated plugin tree is fully derived from the installed
-        // plugins, so start from a clean slate. Copying over the previous
-        // output would leave stale files behind when a plugin deletes or
-        // renames a source file (or is removed entirely), producing
-        // duplicate-class build failures in Gradle.
-        $this->clean();
-        $this->files->ensureDirectoryExists($this->registrationPath);
-
-        // Make sure the generated source root is compiled — the template
-        // declares it, this heals scaffolds installed before it existed
-        // (runs even when the list is empty: registrations live there).
-        $this->registerPluginSourceRoot();
-
-        // Emit ProGuard/R8 keep rules for every plugin (runs even when the
-        // list is empty so a removed plugin's stale rules are cleared).
-        $this->injectPluginProguardRules($allPlugins);
-
-        // Declare plugin-required Gradle plugins in the root build file (runs
-        // even when the list is empty so a removed plugin's declaration is cleared).
-        $this->injectGradlePlugins($allPlugins);
-
         if ($allPlugins->isEmpty()) {
             $this->generateEmptyRegistration();
-            $this->generateEmptyRendererRegistration();
 
             return;
         }
@@ -209,13 +161,12 @@ class AndroidPluginCompiler
             return $p->getAndroidInitFunction() !== null;
         })->isNotEmpty();
 
-        // Copy plugin source files for plugins that have Android code,
-        // pruning copies older compiler versions left under src/main/java
+        // Ensure generated directory exists
+        $this->files->ensureDirectoryExists($this->generatedPath);
+
+        // Copy plugin source files for plugins that have Android code
         $allPlugins->filter(fn (Plugin $p) => $p->hasAndroidCode())
-            ->each(function (Plugin $plugin) {
-                $this->removeLegacyPackageCopies($plugin);
-                $this->copyPluginSources($plugin);
-            });
+            ->each(fn (Plugin $plugin) => $this->copyPluginSources($plugin));
 
         // Generate the bridge function registration file
         if ($hasAndroidFunctions || $hasInitFunctions) {
@@ -223,9 +174,6 @@ class AndroidPluginCompiler
         } else {
             $this->generateEmptyRegistration();
         }
-
-        // Generate UI plugin renderer registration
-        $this->generateRendererRegistration($allPlugins);
 
         // Merge AndroidManifest entries (even if no bridge functions)
         $this->mergeManifestEntries($allPlugins);
@@ -247,237 +195,9 @@ class AndroidPluginCompiler
     }
 
     /**
-     * Write ProGuard/R8 rules for all plugins into the app's
-     * proguard-rules.pro, inside a marker-delimited block that is rebuilt
-     * on every compile (idempotent; stale rules from removed plugins are
-     * dropped). Inert unless minification is enabled.
+     * Copy Kotlin source files from plugin to Android project
      *
-     * Two sources per plugin:
-     *  - generated `-keep` rules for each distinct Kotlin package found in
-     *    the plugin's sources — plugin entry points are reached via
-     *    generated registrations, build-time patches, and JNI, none of
-     *    which R8 can trace, so plugin classes must survive shrinking;
-     *  - verbatim rules the plugin declares as `android.proguard_rules`
-     *    in nativephp.json (dependency `-dontwarn`s and the like).
-     */
-    protected function injectPluginProguardRules(Collection $plugins): void
-    {
-        $proguardPath = $this->androidProjectPath.'/app/proguard-rules.pro';
-
-        if (! $this->files->exists($proguardPath)) {
-            return;
-        }
-
-        $block = $this->buildPluginProguardBlock($plugins);
-        $content = $this->files->get($proguardPath);
-
-        $begin = '# BEGIN nativephp-plugin-rules';
-        $end = '# END nativephp-plugin-rules';
-
-        if (str_contains($content, $begin) && str_contains($content, $end)) {
-            $content = preg_replace(
-                '/'.preg_quote($begin, '/').'.*?'.preg_quote($end, '/').'/s',
-                $block,
-                $content,
-                1
-            );
-        } else {
-            $content = rtrim($content)."\n\n".$block."\n";
-        }
-
-        $this->files->put($proguardPath, $content);
-    }
-
-    /**
-     * Declare Gradle plugins required by installed plugins in the root
-     * build.gradle.kts plugins {} block, inside a marker-delimited block
-     * rebuilt on every compile (idempotent; a removed plugin's declaration
-     * is dropped). Declared from `android.gradle_plugins` in nativephp.json.
-     *
-     * Entries default to `apply false`: the plugin lands on the build
-     * classpath only, and the app module decides whether to apply it (e.g.
-     * google-services is applied only when a google-services.json exists).
-     */
-    protected function injectGradlePlugins(Collection $plugins): void
-    {
-        $rootGradlePath = $this->androidProjectPath.'/build.gradle.kts';
-
-        if (! $this->files->exists($rootGradlePath)) {
-            return;
-        }
-
-        $content = $this->files->get($rootGradlePath);
-
-        $begin = '// BEGIN nativephp-plugin-gradle-plugins';
-        $end = '// END nativephp-plugin-gradle-plugins';
-
-        $block = $this->buildGradlePluginsBlock($plugins, $content);
-
-        if (str_contains($content, $begin) && str_contains($content, $end)) {
-            $content = preg_replace(
-                '/[ \t]*'.preg_quote($begin, '/').'.*?'.preg_quote($end, '/').'\n?/s',
-                $block,
-                $content,
-                1
-            );
-        } elseif ($block !== '') {
-            // Insert at the end of the plugins {} block. The root build file's
-            // plugins block contains no nested braces, so the first closing
-            // brace on its own line terminates it.
-            $content = preg_replace(
-                '/(plugins\s*\{.*?)(\n\})/s',
-                '$1'."\n".rtrim($block).'$2',
-                $content,
-                1
-            );
-        } else {
-            // Nothing to declare and no stale block to clear
-            return;
-        }
-
-        $this->files->put($rootGradlePath, $content);
-    }
-
-    /**
-     * Build the marker-delimited plugins declarations. Pure (no IO on the
-     * android project) so it is unit-testable. Returns '' when no plugin
-     * declares anything. $existingContent is used to skip ids the build
-     * file already declares outside our markers.
-     */
-    public function buildGradlePluginsBlock(Collection $plugins, string $existingContent = ''): string
-    {
-        $entries = [];
-
-        foreach ($plugins as $plugin) {
-            foreach ($plugin->getAndroidGradlePlugins() as $gradlePlugin) {
-                $id = $gradlePlugin['id'] ?? null;
-                $version = $gradlePlugin['version'] ?? null;
-
-                if (! $id || ! $version) {
-                    $this->warn("Plugin '{$plugin->name}' declares a gradle plugin without id/version — skipping");
-
-                    continue;
-                }
-
-                // Guard against injecting arbitrary Kotlin into the build script
-                if (! preg_match('/^[A-Za-z0-9._-]+$/', $id) || ! preg_match('/^[A-Za-z0-9._+-]+$/', $version)) {
-                    $this->warn("Plugin '{$plugin->name}' declares gradle plugin with invalid id/version '{$id}:{$version}' — skipping");
-
-                    continue;
-                }
-
-                // First declaration wins across plugins
-                if (isset($entries[$id])) {
-                    continue;
-                }
-
-                // Skip ids already declared outside our marker block
-                if ($existingContent !== '' && str_contains($existingContent, "id(\"{$id}\")")) {
-                    $withoutBlock = preg_replace(
-                        '/\/\/ BEGIN nativephp-plugin-gradle-plugins.*?\/\/ END nativephp-plugin-gradle-plugins/s',
-                        '',
-                        $existingContent
-                    );
-                    if (str_contains($withoutBlock, "id(\"{$id}\")")) {
-                        continue;
-                    }
-                }
-
-                $apply = $gradlePlugin['apply'] ?? false;
-                $entries[$id] = "    id(\"{$id}\") version \"{$version}\" apply ".($apply ? 'true' : 'false');
-            }
-        }
-
-        if (empty($entries)) {
-            return '';
-        }
-
-        return "    // BEGIN nativephp-plugin-gradle-plugins\n"
-            ."    // Auto-generated on every build from installed plugins — do not edit.\n"
-            .implode("\n", $entries)."\n"
-            ."    // END nativephp-plugin-gradle-plugins\n";
-    }
-
-    /**
-     * Build the marker-delimited rules block. Pure (no IO on the android
-     * project) so it is unit-testable.
-     */
-    public function buildPluginProguardBlock(Collection $plugins): string
-    {
-        $lines = [
-            '# BEGIN nativephp-plugin-rules',
-            '# Auto-generated on every build from installed plugins — do not edit.',
-        ];
-
-        foreach ($plugins as $plugin) {
-            $packages = $this->pluginKotlinPackages($plugin);
-            $declared = $plugin->getAndroidProguardRules();
-
-            if (empty($packages) && empty($declared)) {
-                continue;
-            }
-
-            $lines[] = "# {$plugin->name}";
-            foreach ($packages as $package) {
-                $lines[] = "-keep class {$package}.** { *; }";
-            }
-            foreach ($declared as $rule) {
-                $lines[] = $rule;
-            }
-        }
-
-        $lines[] = '# END nativephp-plugin-rules';
-
-        return implode("\n", $lines);
-    }
-
-    /**
-     * Distinct Kotlin package declarations across a plugin's Android
-     * sources, pruned so a parent package subsumes its children.
-     *
-     * @return list<string>
-     */
-    protected function pluginKotlinPackages(Plugin $plugin): array
-    {
-        $sourcePath = $plugin->getAndroidSourcePath();
-
-        if (! $this->files->isDirectory($sourcePath)) {
-            return [];
-        }
-
-        $packages = [];
-        foreach ($this->files->allFiles($sourcePath) as $file) {
-            if ($file->getExtension() !== 'kt') {
-                continue;
-            }
-            $package = $this->extractPackageFromContent($this->files->get($file->getPathname()));
-            if ($package !== null) {
-                $packages[] = $package;
-            }
-        }
-
-        $packages = array_values(array_unique($packages));
-        sort($packages);
-
-        // Drop packages already covered by a parent's `.**` keep.
-        return array_values(array_filter($packages, function ($candidate) use ($packages) {
-            foreach ($packages as $other) {
-                if ($other !== $candidate && str_starts_with($candidate, $other.'.')) {
-                    return false;
-                }
-            }
-
-            return true;
-        }));
-    }
-
-    /**
-     * Copy Kotlin source files from plugin to the generated source root
-     *
-     * Files are placed at directories matching their package declaration,
-     * relative to the generated root — kotlinc doesn't care where a file
-     * lives, and keeping everything inside one compiler-owned root is what
-     * makes the per-compile wipe safe.
+     * Files are placed at directories matching their package declaration.
      */
     protected function copyPluginSources(Plugin $plugin): void
     {
@@ -486,6 +206,8 @@ class AndroidPluginCompiler
         if (! $this->files->isDirectory($sourcePath)) {
             return;
         }
+
+        $javaBasePath = $this->androidProjectPath.'/app/src/main/java';
 
         // Copy all Kotlin files
         $files = $this->files->allFiles($sourcePath);
@@ -506,120 +228,18 @@ class AndroidPluginCompiler
                     "Plugin '{$plugin->name}': {$file->getFilename()} has no package declaration. ".
                     "Plugins should declare packages like 'package com.yourvendor.pluginname'"
                 );
-                // Fallback: namespace the path by plugin so two plugins'
-                // same-named files can't overwrite each other
+                // Fallback: use sanitized namespace under bridge/plugins if no package found
                 $safeNamespace = $this->sanitizeKotlinName($plugin->getNamespace());
                 $destination = $this->generatedPath.'/'.$safeNamespace.'/'.$file->getFilename();
             } else {
                 // Place file at path matching its package declaration
                 $packagePath = str_replace('.', '/', $package);
-                $destination = $this->generatedPath.'/'.$packagePath.'/'.$file->getFilename();
+                $destination = $javaBasePath.'/'.$packagePath.'/'.$file->getFilename();
             }
 
             $this->files->ensureDirectoryExists(dirname($destination));
             $this->files->put($destination, $content);
             $this->generatedFiles[] = $destination;
-        }
-    }
-
-    /**
-     * Ensure the generated source root is registered in app/build.gradle.kts.
-     *
-     * The template declares it, but scaffolds installed before the root
-     * existed won't have it — without this, copies in the generated root
-     * would never compile. Idempotent: skipped when any mention of the
-     * root is already present.
-     */
-    protected function registerPluginSourceRoot(): void
-    {
-        $buildGradlePath = $this->androidProjectPath.'/app/build.gradle.kts';
-
-        if (! $this->files->exists($buildGradlePath)) {
-            return;
-        }
-
-        $content = $this->files->get($buildGradlePath);
-
-        if (str_contains($content, 'src/nativephp/kotlin')) {
-            return;
-        }
-
-        $block = <<<'KOTLIN'
-
-            // Generated NativePHP plugin sources — owned by the plugin compiler,
-            // wiped and rebuilt on every compile. Do not edit.
-            sourceSets.getByName("main") {
-                java.srcDir("src/nativephp/kotlin")
-            }
-        KOTLIN;
-
-        $patched = preg_replace('/^(android\s*\{)/m', '$1'.$block, $content, 1, $count);
-
-        if ($count === 1) {
-            $this->files->put($buildGradlePath, $patched);
-        } else {
-            $this->warn('Could not find the android {} block in app/build.gradle.kts — add java.srcDir("src/nativephp/kotlin") to its main source set manually.');
-        }
-    }
-
-    /**
-     * Delete copies that older compiler versions placed at package-derived
-     * paths under src/main/java — outside the generated root — so they
-     * don't re-declare the classes now copied into the root. Only files
-     * matching a currently-installed plugin's sources can be located this
-     * way; stale copies of files renamed or removed before the upgrade
-     * have to be cleaned up manually (or via native:install).
-     */
-    protected function removeLegacyPackageCopies(Plugin $plugin): void
-    {
-        $sourcePath = $plugin->getAndroidSourcePath();
-
-        if (! $this->files->isDirectory($sourcePath)) {
-            return;
-        }
-
-        $javaBasePath = $this->androidProjectPath.'/app/src/main/java';
-
-        foreach ($this->files->allFiles($sourcePath) as $file) {
-            if ($file->getExtension() !== 'kt') {
-                continue;
-            }
-
-            $package = $this->extractPackageFromContent($this->files->get($file->getPathname()));
-
-            if ($package === null) {
-                // No-package fallback copies lived under the legacy
-                // generated dir, which clean() removes wholesale
-                continue;
-            }
-
-            $legacyCopy = $javaBasePath.'/'.str_replace('.', '/', $package).'/'.$file->getFilename();
-
-            if ($this->files->exists($legacyCopy)) {
-                $this->files->delete($legacyCopy);
-                $this->pruneEmptyDirectories(dirname($legacyCopy), $javaBasePath);
-            }
-        }
-    }
-
-    /**
-     * Remove now-empty directories walking up from $dir to (excluding)
-     * $stopAt. Stops at the first non-empty directory, so package dirs
-     * shared with hand-written app code are left alone.
-     */
-    protected function pruneEmptyDirectories(string $dir, string $stopAt): void
-    {
-        while ($dir !== $stopAt && str_starts_with($dir, $stopAt.'/')) {
-            if (! $this->files->isDirectory($dir)) {
-                break;
-            }
-
-            if (count($this->files->files($dir, true)) > 0 || count($this->files->directories($dir)) > 0) {
-                break;
-            }
-
-            $this->files->deleteDirectory($dir);
-            $dir = dirname($dir);
         }
     }
 
@@ -677,7 +297,7 @@ class AndroidPluginCompiler
         }
 
         $content = $this->renderRegistrationTemplate($registrations, $initFunctions);
-        $path = $this->registrationPath.'/PluginBridgeFunctionRegistration.kt';
+        $path = $this->generatedPath.'/PluginBridgeFunctionRegistration.kt';
 
         $this->files->put($path, $content);
         $this->generatedFiles[] = $path;
@@ -769,81 +389,11 @@ class AndroidPluginCompiler
      */
     protected function generateEmptyRegistration(): void
     {
-        $this->files->ensureDirectoryExists($this->registrationPath);
+        $this->files->ensureDirectoryExists($this->generatedPath);
 
         $content = Stub::make('android/PluginBridgeFunctionRegistration.empty.kt.stub')->render();
 
-        $path = $this->registrationPath.'/PluginBridgeFunctionRegistration.kt';
-        $this->files->put($path, $content);
-        $this->generatedFiles[] = $path;
-    }
-
-    /**
-     * Generate PluginRendererRegistration.kt for UI plugin renderers
-     */
-    protected function generateRendererRegistration(Collection $plugins): void
-    {
-        $registrations = [];
-
-        foreach ($plugins as $plugin) {
-            foreach ($plugin->getComponents() as $component) {
-                if (empty($component['android_renderer'])) {
-                    continue;
-                }
-
-                $registrations[] = [
-                    'type' => $component['type'],
-                    'renderer' => $component['android_renderer'],
-                    'plugin' => $plugin->name,
-                ];
-            }
-        }
-
-        if (empty($registrations)) {
-            $this->generateEmptyRendererRegistration();
-
-            return;
-        }
-
-        $imports = collect($registrations)
-            ->pluck('renderer')
-            ->unique()
-            ->sort()
-            ->map(fn ($renderer) => "import {$renderer}")
-            ->implode("\n");
-
-        $registerCalls = collect($registrations)
-            ->map(function ($reg) {
-                // Extract just the class name from FQN: com.vendor.ui.RendererName → RendererName
-                $parts = explode('.', $reg['renderer']);
-                $className = end($parts);
-
-                return "    // Plugin: {$reg['plugin']}\n    NativeRendererRegistry.register(\"{$reg['type']}\", NodeRenderer { node, modifier ->\n        {$className}.Render(node, modifier)\n    })";
-            })
-            ->implode("\n\n");
-
-        $content = Stub::make('android/PluginRendererRegistration.kt.stub')
-            ->replaceAll([
-                'IMPORTS' => $imports,
-                'REGISTRATIONS' => $registerCalls,
-            ])
-            ->render();
-
-        $path = $this->registrationPath.'/PluginRendererRegistration.kt';
-        $this->files->put($path, $content);
-        $this->generatedFiles[] = $path;
-    }
-
-    /**
-     * Generate empty renderer registration when no UI plugins
-     */
-    protected function generateEmptyRendererRegistration(): void
-    {
-        $this->files->ensureDirectoryExists($this->registrationPath);
-
-        $content = Stub::make('android/PluginRendererRegistration.empty.kt.stub')->render();
-
-        $path = $this->registrationPath.'/PluginRendererRegistration.kt';
+        $path = $this->generatedPath.'/PluginBridgeFunctionRegistration.kt';
         $this->files->put($path, $content);
         $this->generatedFiles[] = $path;
     }
@@ -946,9 +496,6 @@ class AndroidPluginCompiler
         // Handle different value types
         if (is_bool($value)) {
             $value = $value ? 'true' : 'false';
-        } elseif (is_string($value)) {
-            // Substitute ${ENV_VAR} placeholders, mirroring iOS info_plist handling
-            $value = $this->substituteEnvPlaceholders($value);
         }
 
         return "<meta-data android:name=\"{$name}\" android:value=\"{$value}\" />";
@@ -1101,9 +648,6 @@ class AndroidPluginCompiler
             } elseif ($value !== null) {
                 if (is_bool($value)) {
                     $value = $value ? 'true' : 'false';
-                } elseif (is_string($value)) {
-                    // Substitute ${ENV_VAR} placeholders, mirroring iOS info_plist handling
-                    $value = $this->substituteEnvPlaceholders($value);
                 }
                 $xml .= "            <meta-data android:name=\"{$name}\" android:value=\"{$value}\" />\n";
             }
@@ -1246,8 +790,7 @@ class AndroidPluginCompiler
         }
 
         // First, remove any existing plugin permission comments to avoid duplicates
-        // (\r?\n tolerates CRLF manifests generated/committed on Windows)
-        $manifest = preg_replace('/\s*<!-- NativePHP Plugin Permissions -->\r?\n/s', '', $manifest);
+        $manifest = preg_replace('/\s*<!-- NativePHP Plugin Permissions -->\n/s', '', $manifest);
 
         $permissionBlock = "\n    <!-- NativePHP Plugin Permissions -->\n";
         $hasNewPermissions = false;
@@ -1286,8 +829,7 @@ class AndroidPluginCompiler
         }
 
         // First, remove any existing plugin feature comments to avoid duplicates
-        // (\r?\n tolerates CRLF manifests generated/committed on Windows)
-        $manifest = preg_replace('/\s*<!-- NativePHP Plugin Features -->\r?\n/s', '', $manifest);
+        $manifest = preg_replace('/\s*<!-- NativePHP Plugin Features -->\n/s', '', $manifest);
 
         $featureBlock = "\n    <!-- NativePHP Plugin Features -->\n";
         $hasNewFeatures = false;
@@ -1499,122 +1041,56 @@ KOTLIN;
     }
 
     /**
-     * Declare each plugin's Android dependencies in the app module's
-     * dependencies {} block, inside a marker-delimited block rebuilt on every
-     * compile — the same shape as injectGradlePlugins() and the proguard
-     * rules block. Declared from `android.dependencies` in nativephp.json.
-     *
-     * Before this was marker-delimited, every compile appended a fresh
-     * "// NativePHP Plugin Dependencies" header: the dependency lines under
-     * it were guarded against duplication, the header was not. A project
-     * built a few hundred times accumulates a few hundred header comments,
-     * and — more importantly than the noise — its build.gradle.kts is a
-     * different file after every build, so nothing downstream of it can be
-     * reproducible. Those stale headers are removed here as well.
+     * Add Gradle dependencies from plugins
      */
     protected function addGradleDependencies(Collection $plugins): void
     {
         $buildGradlePath = $this->androidProjectPath.'/app/build.gradle.kts';
         $buildGradle = $this->files->get($buildGradlePath);
 
-        $original = $buildGradle;
-
-        // Drop headers written by versions that did not delimit the block.
-        // Comments only: the dependency lines an earlier build wrote are
-        // valid declarations and are left exactly where they are, which is
-        // also what keeps buildGradleDependenciesBlock() from declaring them
-        // a second time.
-        $buildGradle = preg_replace(
-            '/\n[ \t]*\/\/ NativePHP Plugin Dependencies[ \t]*(?=\n)/',
-            '',
-            $buildGradle
-        );
-
-        $begin = '// BEGIN nativephp-plugin-dependencies';
-        $end = '// END nativephp-plugin-dependencies';
-
-        $block = $this->buildGradleDependenciesBlock($plugins, $buildGradle);
-
-        if (str_contains($buildGradle, $begin) && str_contains($buildGradle, $end)) {
-            $buildGradle = preg_replace(
-                '/[ \t]*'.preg_quote($begin, '/').'.*?'.preg_quote($end, '/').'\n?/s',
-                $block,
-                $buildGradle,
-                1
-            );
-        } elseif ($block !== '') {
-            $buildGradle = preg_replace(
-                '/(dependencies\s*\{[ \t]*\r?\n)/s',
-                '$1'.$block,
-                $buildGradle,
-                1
-            );
-        }
-
-        if ($buildGradle === $original) {
-            return;
-        }
-
-        $this->files->put($buildGradlePath, $buildGradle);
-    }
-
-    /**
-     * Build the marker-delimited dependency declarations. Pure (no IO on the
-     * android project) so it is unit-testable. Returns '' when no plugin
-     * declares anything. $existingContent is used to skip coordinates the
-     * build file already declares outside our markers.
-     */
-    public function buildGradleDependenciesBlock(Collection $plugins, string $existingContent = ''): string
-    {
-        // What the build file declares outside our own block. Our block is
-        // excluded, or a rebuild would consider everything it wrote last time
-        // "already present" and emit an empty block.
-        $outside = $existingContent === '' ? '' : (preg_replace(
-            '/\/\/ BEGIN nativephp-plugin-dependencies.*?\/\/ END nativephp-plugin-dependencies/s',
-            '',
-            $existingContent
-        ) ?? $existingContent);
-
         $dependenciesByType = [];
 
         foreach ($plugins as $plugin) {
-            foreach ($plugin->getAndroidDependencies() as $type => $libraries) {
+            $androidDeps = $plugin->getAndroidDependencies();
+
+            foreach ($androidDeps as $type => $libraries) {
+                if (! isset($dependenciesByType[$type])) {
+                    $dependenciesByType[$type] = [];
+                }
                 foreach ($libraries as $library) {
                     $dependenciesByType[$type][] = $library;
                 }
             }
         }
 
-        $lines = [];
+        if (empty($dependenciesByType)) {
+            return;
+        }
 
+        // Find dependencies block and add new ones
+        $dependencyBlock = "\n    // NativePHP Plugin Dependencies\n";
         foreach ($dependenciesByType as $type => $libraries) {
             foreach (array_unique($libraries) as $dep) {
-                // Handle platform() BOMs specially - they need platform() outside the quotes
-                $isBom = (bool) preg_match('/^platform\((.+)\)$/', $dep, $matches);
-                $coordinate = $isBom ? $matches[1] : $dep;
-
-                // Compare on the coordinate rather than on the declaration:
-                // a BOM arrives as `platform(group:artifact:version)` and is
-                // written as `platform("group:artifact:version")`, so testing
-                // the raw form never matched and every build re-declared it.
-                if ($outside !== '' && str_contains($outside, $coordinate)) {
-                    continue;
+                if (! str_contains($buildGradle, $dep)) {
+                    // Handle platform() BOMs specially - they need platform() outside the quotes
+                    if (preg_match('/^platform\((.+)\)$/', $dep, $matches)) {
+                        $dependencyBlock .= "    {$type}(platform(\"{$matches[1]}\"))\n";
+                    } else {
+                        $dependencyBlock .= "    {$type}(\"{$dep}\")\n";
+                    }
                 }
-
-                $lines[] = $isBom
-                    ? "    {$type}(platform(\"{$coordinate}\"))"
-                    : "    {$type}(\"{$coordinate}\")";
             }
         }
 
-        if (empty($lines)) {
-            return '';
-        }
+        // Insert into dependencies block
+        $buildGradle = preg_replace(
+            '/(dependencies\s*\{)/s',
+            '$1'.$dependencyBlock,
+            $buildGradle,
+            1
+        );
 
-        return "    // BEGIN nativephp-plugin-dependencies\n"
-            ."    // Auto-generated on every build from installed plugins — do not edit.\n"
-            .implode("\n", $lines)."\n"
-            ."    // END nativephp-plugin-dependencies\n";
+        $this->files->put($buildGradlePath, $buildGradle);
     }
 
     /**
@@ -1660,12 +1136,6 @@ KOTLIN;
     {
         if ($this->files->isDirectory($this->generatedPath)) {
             $this->files->deleteDirectory($this->generatedPath);
-        }
-
-        // Where registrations and fallback copies lived before the
-        // dedicated source root — always compiler-owned, safe to drop
-        if ($this->files->isDirectory($this->legacyGeneratedPath)) {
-            $this->files->deleteDirectory($this->legacyGeneratedPath);
         }
     }
 }

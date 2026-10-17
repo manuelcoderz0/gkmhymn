@@ -7,14 +7,18 @@ use Native\Mobile\Facades\Device;
 class System
 {
     /**
-     * Process-cached current appearance. Seeded on first read via a bridge
-     * probe (`System.GetAppearance`) and kept fresh by the AppearanceChanged
-     * event — a listener registered in NativeServiceProvider calls
-     * rememberAppearance() when the OS flips the theme. Mirrors the Platform
-     * caching pattern so hot-path reads (isDark() in render logic) avoid a
-     * bridge round-trip per call.
+     * Toggle the device flashlight on/off.
+     *
+     * @deprecated Use \Native\Mobile\Facades\Device::toggleFlashlight() instead
      */
-    private static ?string $appearance = null;
+    #[\Deprecated(message: 'Use \Native\Mobile\Facades\Device::flashlight() instead', since: '2.0.0')]
+    public function flashlight(): void
+    {
+        // Use the new god method pattern via Device class
+        if (function_exists('nativephp_call')) {
+            nativephp_call('Device.ToggleFlashlight', '{}');
+        }
+    }
 
     public function isIos(): bool
     {
@@ -46,48 +50,6 @@ class System
         }
 
         return false;
-    }
-
-    /**
-     * Current system appearance: 'light' or 'dark'. Off the device (tests, web
-     * preview) the bridge is absent and this returns 'light'.
-     */
-    public function appearance(): string
-    {
-        if (self::$appearance !== null) {
-            return self::$appearance;
-        }
-
-        if (function_exists('nativephp_call')) {
-            $result = nativephp_call('System.GetAppearance', '{}');
-            $mode = json_decode($result ?: '{}', true)['appearance'] ?? null;
-            if ($mode === 'light' || $mode === 'dark') {
-                return self::$appearance = $mode;
-            }
-        }
-
-        return 'light';
-    }
-
-    public function isDarkMode(): bool
-    {
-        return $this->appearance() === 'dark';
-    }
-
-    public function isLightMode(): bool
-    {
-        return $this->appearance() === 'light';
-    }
-
-    /**
-     * Update the process-cached appearance. Called by the AppearanceChanged
-     * listener so `appearance()` stays fresh without re-probing the bridge.
-     */
-    public static function rememberAppearance(string $mode): void
-    {
-        if ($mode === 'light' || $mode === 'dark') {
-            self::$appearance = $mode;
-        }
     }
 
     /**

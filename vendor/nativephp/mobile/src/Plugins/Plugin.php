@@ -10,28 +10,12 @@ class Plugin
         public readonly string $path,
         public readonly PluginManifest $manifest,
         public readonly string $description = '',
-        public readonly ?string $serviceProvider = null,
-        public readonly string $composerType = 'nativephp-plugin'
+        public readonly ?string $serviceProvider = null
     ) {}
 
     public function getNamespace(): string
     {
         return $this->manifest->namespace;
-    }
-
-    /**
-     * Platforms this plugin declares native code for.
-     *
-     * @return list<string>
-     */
-    public function getPlatforms(): array
-    {
-        return $this->manifest->platforms;
-    }
-
-    public function supportsPlatform(string $platform): bool
-    {
-        return in_array(strtolower($platform), $this->manifest->platforms, true);
     }
 
     public function getDescription(): string
@@ -44,38 +28,9 @@ class Plugin
         return $this->manifest->bridgeFunctions;
     }
 
-    public function getComponents(): array
-    {
-        return $this->manifest->components;
-    }
-
-    public function isUiPlugin(): bool
-    {
-        return $this->composerType === 'nativephp-ui-plugin';
-    }
-
-    public function isSystemPlugin(): bool
-    {
-        return $this->composerType === 'nativephp-plugin';
-    }
-
     public function getAndroidPermissions(): array
     {
         return $this->manifest->android['permissions'] ?? [];
-    }
-
-    /**
-     * Extra ProGuard/R8 rules this plugin needs in minified builds, declared
-     * as `android.proguard_rules` in nativephp.json. Keep rules for the
-     * plugin's own classes are generated automatically from its Kotlin
-     * package declarations — this is for dependency quirks the compiler
-     * can't infer (e.g. `-dontwarn` for a library's optional reflection).
-     *
-     * @return list<string>
-     */
-    public function getAndroidProguardRules(): array
-    {
-        return $this->manifest->android['proguard_rules'] ?? [];
     }
 
     public function getIosInfoPlist(): array
@@ -163,19 +118,6 @@ class Plugin
         return $this->manifest->android['repositories'] ?? [];
     }
 
-    /**
-     * Gradle plugins this plugin needs declared in the root build.gradle.kts
-     * plugins {} block, as `android.gradle_plugins` in nativephp.json.
-     * Each entry: ['id' => string, 'version' => string, 'apply' => bool (default false)].
-     * `apply => false` puts the plugin on the build classpath only, so the
-     * app module can apply it conditionally (e.g. google-services when a
-     * google-services.json is present).
-     */
-    public function getAndroidGradlePlugins(): array
-    {
-        return $this->manifest->android['gradle_plugins'] ?? [];
-    }
-
     public function getAndroidFeatures(): array
     {
         return $this->manifest->android['features'] ?? [];
@@ -253,10 +195,6 @@ class Plugin
 
     public function hasAndroidCode(): bool
     {
-        if (! $this->supportsPlatform('android')) {
-            return false;
-        }
-
         $path = $this->getAndroidSourcePath();
 
         if (! is_dir($path)) {
@@ -285,31 +223,30 @@ class Plugin
 
     public function hasIosCode(): bool
     {
-        if (! $this->supportsPlatform('ios')) {
+        $path = $this->getIosSourcePath();
+
+        if (! is_dir($path)) {
             return false;
         }
 
-        return SwiftSourceFilter::hasAny($this->getIosSourcePath());
-    }
+        // Check if there are any .swift files in the directory
+        $files = glob($path.'/*.swift') ?: [];
+        if (! empty($files)) {
+            return true;
+        }
 
-    /**
-     * An explicit allow-list of iOS sources, from the manifest's
-     * `ios.sources`. Paths are relative to the plugin's iOS source path and
-     * may name a file or a directory.
-     *
-     * When present it is authoritative: nothing outside it is copied. It is
-     * the escape hatch for a layout the automatic exclusions get wrong.
-     *
-     * @return list<string>
-     */
-    public function getIosSources(): array
-    {
-        $sources = $this->manifest->ios['sources'] ?? [];
+        // Check subdirectories recursively
+        $iterator = new \RecursiveIteratorIterator(
+            new \RecursiveDirectoryIterator($path, \RecursiveDirectoryIterator::SKIP_DOTS)
+        );
 
-        return array_values(array_filter(
-            is_array($sources) ? $sources : [],
-            fn ($source) => is_string($source) && $source !== ''
-        ));
+        foreach ($iterator as $file) {
+            if ($file->isFile() && $file->getExtension() === 'swift') {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     public function getAndroidSourceFiles(): array
@@ -341,12 +278,21 @@ class Plugin
             return [];
         }
 
-        $root = $this->getIosSourcePath();
-
-        return array_map(
-            fn (string $relative) => $root.'/'.$relative,
-            SwiftSourceFilter::collect($root)
+        $files = [];
+        $iterator = new \RecursiveIteratorIterator(
+            new \RecursiveDirectoryIterator(
+                $this->getIosSourcePath(),
+                \RecursiveDirectoryIterator::SKIP_DOTS
+            )
         );
+
+        foreach ($iterator as $file) {
+            if ($file->isFile() && $file->getExtension() === 'swift') {
+                $files[] = $file->getPathname();
+            }
+        }
+
+        return $files;
     }
 
     public function toArray(): array
