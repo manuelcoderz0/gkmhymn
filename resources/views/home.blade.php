@@ -1,5 +1,5 @@
 <main>
-    <header class="bg-[#065c2d] z-2 sticky top-0 pt-6">
+    <header class="bg-[#065c2d] z-2 sticky top-0 pt-10">
         <div class="px-4.5">
             <div class="relative pb-5 flex items-center justify-between z-1">
                 <div class="flex items-center gap-2">
@@ -64,7 +64,7 @@
                 </label>
 
 
-                <button class="join-item rounded-r-md bg-[#f5f5f5] dark:bg-[#343434] border-[#e9e9e9] dark:border-[#414141] border-0 border-l px-3">
+                <button wire:click="random" class="join-item rounded-r-md bg-[#f5f5f5] dark:bg-[#343434] border-[#e9e9e9] dark:border-[#414141] border-0 border-l px-3">
                     <svg class="size-5.5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#065c2d" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="icon icon-tabler icons-tabler-outline icon-tabler-arrows-shuffle">
                         <path stroke="none" d="M0 0h24v24H0z" fill="none" />
                         <path d="M18 4l3 3l-3 3" />

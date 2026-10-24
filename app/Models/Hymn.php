@@ -5,5 +5,5 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 
 class Hymn extends Model {
-    //
+    protected $connection = 'custom';
 }

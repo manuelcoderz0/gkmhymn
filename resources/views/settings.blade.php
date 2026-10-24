@@ -1,13 +1,15 @@
 <main>
-    <header class="bg-white dark:bg-[#343434] z-2 sticky top-0 pt-6">
+    <header class="bg-white dark:bg-[#343434] z-2 sticky top-0 pt-10">
         <div class="px-4.5">
             <div class="relative pb-5 flex items-center justify-between z-1">
                 <div class="flex items-center gap-2">
                     <a href="{{ route('home') }}" wire:navigate class="flex items-center gap-2 cursor-pointer">
                         <div class="size-9 relative flex items-center justify-center border border-[#e9e9e9] dark:border-white/30 rounded-md bg-white/10 dark:bg-white/5">
-                            <svg class="size-5.5 stroke-[#1f1f1f] dark:stroke-white" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="icon icon-tabler icons-tabler-outline icon-tabler-chevron-left">
+                            <svg class="size-5.5 stroke-[#1f1f1f] dark:stroke-white" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="icon icon-tabler icons-tabler-outline icon-tabler-home">
                                 <path stroke="none" d="M0 0h24v24H0z" fill="none" />
-                                <path d="M15 6l-6 6l6 6" />
+                                <path d="M5 12l-2 0l9 -9l9 9l-2 0" />
+                                <path d="M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2 -2v-7" />
+                                <path d="M9 21v-6a2 2 0 0 1 2 -2h2a2 2 0 0 1 2 2v6" />
                             </svg>
                         </div>
                     </a>
@@ -49,12 +51,14 @@
         <div class="px-4.5">
             <form wire:submit="save" class="bg-white dark:bg-[#343434] text-[#1f1f1f]/90 dark:text-white p-4 rounded-md text-center flex flex-col gap-4">
                 <fieldset class="fieldset">
-                    <legend class="fieldset-legend">
-                        Font Size: <span style="font-size: {{ setting('font') }}px">{{ setting('font') }}</span>
+                    <legend class="fieldset-legend text-[14px]">
+                        Font Size: <span>{{ setting('font') }}</span>
                     </legend>
                     <div class="w-full">
-                        <input wire:model.live="form.font" wire:change="save" type="range" min="14" max="18" class="range range-xs w-full" step="1" />
+                        <input wire:model.live="form.font" wire:change="save" type="range" min="14" max="20" class="range range-xs w-full" step="1" />
                         <div class="flex justify-between px-2.5 mt-2 text-xs">
+                            <span>|</span>
+                            <span>|</span>
                             <span>|</span>
                             <span>|</span>
                             <span>|</span>
@@ -67,6 +71,8 @@
                             <span>16</span>
                             <span>17</span>
                             <span>18</span>
+                            <span>19</span>
+                            <span>20</span>
                         </div>
                     </div>
                 </fieldset>

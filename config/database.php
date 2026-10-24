@@ -32,6 +32,18 @@ return [
 
     'connections' => [
 
+        'custom' => [
+            'driver' => 'sqlite',
+            'url' => env('DB_URL'),
+            'database' => env('DC_DATABASE', database_path('custom.sqlite')),
+            'prefix' => '',
+            'foreign_key_constraints' => env('DB_FOREIGN_KEYS', true),
+            'busy_timeout' => null,
+            'journal_mode' => null,
+            'synchronous' => null,
+            'transaction_mode' => 'DEFERRED',
+        ],
+
         'sqlite' => [
             'driver' => 'sqlite',
             'url' => env('DB_URL'),

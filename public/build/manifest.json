@@ -28,12 +28,12 @@
     "src": "_fonts-scZngnlz.css"
   },
   "resources/js/app.js": {
-    "file": "assets/app-nEIrhQY6.js",
+    "file": "assets/app-DIx0KGvs.js",
     "name": "app",
     "src": "resources/js/app.js",
     "isEntry": true,
     "css": [
-      "assets/app-Dyr6YYpJ.css"
+      "assets/app-CMu3SjBf.css"
     ]
   }
 }

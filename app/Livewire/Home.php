@@ -26,6 +26,15 @@ class Home extends Component {
         $this->filter = $filter;
     }
 
+    public function random() {
+        $hymn_id = Hymn::pluck('id')->random();
+
+        return $this->redirect(
+            route('hymn', ['hymn' => $hymn_id]),
+            navigate: true
+        );
+    }
+
     public function render() {
 
         $title  = __('Home');
